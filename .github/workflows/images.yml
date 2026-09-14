@@ -1,0 +1,73 @@
+name: NVIDIA CUDA images
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cuda-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  configure:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Generate build matrix
+        id: matrix
+        uses: docker/bake-action/subaction/matrix@v7
+        with:
+          workdir: nvidia/cuda
+          target: default
+          fields: target
+
+  build:
+    needs: configure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.configure.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Make room for CUDA and development tools
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Set image repository
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "IMAGE=ghcr.io/${REPOSITORY,,}/nvidia/cuda" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build the image
+        uses: docker/bake-action@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ env.IMAGE }}
+          TAG_SUFFIX: sha-${{ github.sha }}
+        with:
+          source: .
+          files: nvidia/cuda/docker-bake.hcl
+          targets: ${{ matrix.target }}
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          set: '*.labels.org.opencontainers.image.revision=${{ github.sha }}'
