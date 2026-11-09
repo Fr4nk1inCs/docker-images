@@ -41,7 +41,7 @@ RUN --mount=type=secret,id=github_token bash -euo pipefail <<'EOF'
   eval "$(/root/.local/bin/mise activate bash --shims)"
 
   TERM=xterm-256color zsh -ic 'exit'
-  test -s /root/.zim/init.zsh
+  test -s /root/.local/share/zim/init.zsh
   nvim --headless '+Lazy! sync' +qa
 
   rm -rf /root/.cache /root/.npm/_cacache /root/.cargo/registry /root/.cargo/git
